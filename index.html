@@ -4,274 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Code Scanner</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:       #0f172a;
-      --surface:  #1e293b;
-      --border:   #334155;
-      --text:     #f1f5f9;
-      --muted:    #64748b;
-      --accent:   #22d3ee;
-      --blue:     #0ea5e9;
-      --red:      #dc2626;
-    }
-
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-
-    body {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .app {
-      width: 100%;
-      max-width: 480px;
-      padding: 24px 16px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
-    }
-
-    h1 { font-size: 1.4rem; font-weight: 700; }
-
-    /* ── Viewport ── */
-    .viewport {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 4 / 3;
-      background: var(--surface);
-      border-radius: 16px;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /*
-      CRITICAL MOBILE FIX:
-      Never use display:none on the video element.
-      iOS Safari and many Android Chromes will refuse to decode
-      frames from a video that has no layout dimensions.
-      visibility:hidden keeps the element sized in the DOM.
-    */
-    #video {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      visibility: hidden;
-    }
-
-    #video.live { visibility: visible; }
-
-    .placeholder {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      color: var(--muted);
-      text-align: center;
-      padding: 0 24px;
-      transition: opacity 0.25s;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .placeholder.gone { opacity: 0; }
-    .placeholder svg  { width: 56px; height: 56px; }
-    .placeholder p    { font-size: 0.85rem; line-height: 1.5; }
-
-    /* viewfinder corners */
-    .vf { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-    .vf.active { display: block; }
-
-    .corner {
-      position: absolute;
-      width: 26px; height: 26px;
-      border-style: solid;
-      border-color: var(--accent);
-    }
-    .corner.tl { top: 10%;    left: 8%;   border-width: 3px 0 0 3px; }
-    .corner.tr { top: 10%;    right: 8%;  border-width: 3px 3px 0 0; }
-    .corner.bl { bottom: 10%; left: 8%;   border-width: 0 0 3px 3px; }
-    .corner.br { bottom: 10%; right: 8%;  border-width: 0 3px 3px 0; }
-
-    /* scan line */
-    .scanline {
-      display: none;
-      position: absolute;
-      left: 8%; right: 8%;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      box-shadow: 0 0 7px var(--accent);
-      animation: sweep 2s ease-in-out infinite;
-      pointer-events: none;
-      z-index: 3;
-    }
-    .scanline.active { display: block; }
-
-    @keyframes sweep {
-      0%   { top: 10%; }
-      50%  { top: 88%; }
-      100% { top: 10%; }
-    }
-
-    /* ── Button ── */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      border: none;
-      border-radius: 50px;
-      padding: 13px 30px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.18s, transform 0.1s, opacity 0.2s;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
-    .btn:active   { transform: scale(0.96); }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    .btn svg      { width: 20px; height: 20px; flex-shrink: 0; }
-
-    .btn-start {
-      background: var(--blue);
-      color: #fff;
-      box-shadow: 0 4px 16px rgba(14,165,233,0.4);
-    }
-    .btn-start:not(:disabled):hover { background: #0284c7; }
-
-    .btn-stop {
-      background: var(--red);
-      color: #fff;
-      box-shadow: 0 4px 16px rgba(220,38,38,0.4);
-    }
-    .btn-stop:not(:disabled):hover { background: #b91c1c; }
-
-    /* ── Status ── */
-    .status {
-      font-size: 0.78rem;
-      color: var(--muted);
-      text-align: center;
-      min-height: 16px;
-      padding: 0 12px;
-      line-height: 1.5;
-    }
-
-    /* ── Result overlay ── */
-    .overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.6);
-      z-index: 999;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .overlay.visible { display: flex; }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      width: 100%;
-      max-width: 400px;
-      padding: 28px 20px 22px;
-      position: relative;
-      box-shadow: 0 24px 64px rgba(0,0,0,0.7);
-      animation: pop 0.22s cubic-bezier(0.34,1.56,0.64,1);
-    }
-
-    @keyframes pop {
-      from { opacity: 0; transform: scale(0.8) translateY(10px); }
-      to   { opacity: 1; transform: scale(1) translateY(0); }
-    }
-
-    /* X close button */
-    .x-btn {
-      position: absolute;
-      top: 11px; right: 11px;
-      width: 28px; height: 28px;
-      border: none;
-      border-radius: 50%;
-      background: var(--border);
-      color: var(--muted);
-      font-size: 0.85rem;
-      font-weight: 800;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      line-height: 1;
-    }
-    .x-btn:hover { background: var(--red); color: #fff; }
-
-    .check-wrap {
-      width: 40px; height: 40px;
-      border-radius: 50%;
-      background: #dcfce7;
-      display: flex; align-items: center; justify-content: center;
-      margin-bottom: 12px;
-    }
-    .check-wrap svg { width: 22px; height: 22px; stroke: #16a34a; }
-
-    .r-eyebrow {
-      font-size: 0.65rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--accent);
-      margin-bottom: 5px;
-    }
-
-    /* "Code Recognized: '...'" */
-    .r-headline {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: var(--text);
-      word-break: break-all;
-      padding-right: 16px;
-      margin-bottom: 14px;
-      line-height: 1.4;
-    }
-
-    .r-raw {
-      background: var(--bg);
-      border: 1px solid #1d3a5c;
-      border-radius: 10px;
-      padding: 10px 13px;
-      font-family: 'Courier New', monospace;
-      font-size: 0.82rem;
-      color: #e2e8f0;
-      word-break: break-all;
-      line-height: 1.6;
-    }
-
-    .r-meta { margin-top: 9px; font-size: 0.72rem; color: var(--muted); }
-  </style>
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
   <div class="app">
     <h1>&#128247; Code Scanner</h1>
 
-    <div class="viewport">
+    <div class="viewport" id="viewport">
+
       <div class="placeholder" id="placeholder">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -285,6 +26,7 @@
       </div>
 
       <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas" style="display:none;"></canvas>
 
       <div class="vf" id="vf">
         <div class="corner tl"></div>
@@ -295,7 +37,7 @@
       <div class="scanline" id="scanline"></div>
     </div>
 
-    <button class="btn btn-start" id="mainBtn" onclick="toggleScanner()">
+    <button class="btn btn-start" id="mainBtn">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07
@@ -310,18 +52,15 @@
     <p class="status" id="statusMsg">Ready</p>
   </div>
 
-
-  <!-- Result card — only the X button closes it -->
+  <!-- Result card — X button only close -->
   <div class="overlay" id="overlay">
     <div class="card">
-      <button class="x-btn" onclick="closeResult()" title="Close">&#10005;</button>
-
+      <button class="x-btn" id="xBtn" title="Close">&#10005;</button>
       <div class="check-wrap">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
         </svg>
       </div>
-
       <div class="r-eyebrow">Scan Result</div>
       <div class="r-headline" id="rHeadline"></div>
       <div class="r-raw"      id="rRaw"></div>
@@ -329,217 +68,11 @@
     </div>
   </div>
 
-
-  <!--
-    ZXing — free, open-source (Apache 2.0).
-    No account. No API key. No cost.
-    This one JS file is the entire decoder.
-  -->
-  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-
-  <script>
-  (function () {
-    'use strict';
-
-    var reader      = null;
-    var isScanning  = false;
-    var lastValue   = null;
-    var cooldownTmr = null;
-    var COOLDOWN    = 2500;
-
-    var FORMAT_NAMES = {
-      0:  'Aztec',
-      1:  'Codabar',
-      2:  'Code 39',
-      3:  'Code 93',
-      4:  'Code 128',
-      5:  'Data Matrix',
-      6:  'EAN-8',
-      7:  'EAN-13',
-      8:  'ITF  (FedEx Ground)',
-      9:  'MaxiCode  (UPS)',
-      10: 'PDF417  (FedEx / USPS)',
-      11: 'QR Code',
-      12: 'RSS 14',
-      13: 'RSS Expanded',
-      14: 'UPC-A',
-      15: 'UPC-E',
-      16: 'UPC/EAN Extension'
-    };
-
-    function el(id) { return document.getElementById(id); }
-    function setStatus(msg) { el('statusMsg').textContent = msg; }
-
-    /* ── Build ZXing reader with all required format hints ── */
-    function buildReader() {
-      var hints = new Map();
-
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        ZXing.BarcodeFormat.CODE_128,
-        ZXing.BarcodeFormat.CODE_39,
-        ZXing.BarcodeFormat.CODE_93,
-        ZXing.BarcodeFormat.PDF_417,
-        ZXing.BarcodeFormat.QR_CODE,
-        ZXing.BarcodeFormat.DATA_MATRIX,
-        ZXing.BarcodeFormat.AZTEC,
-        ZXing.BarcodeFormat.MAXICODE,
-        ZXing.BarcodeFormat.ITF,
-        ZXing.BarcodeFormat.CODABAR,
-        ZXing.BarcodeFormat.EAN_13,
-        ZXing.BarcodeFormat.EAN_8,
-        ZXing.BarcodeFormat.UPC_A,
-        ZXing.BarcodeFormat.UPC_E,
-        ZXing.BarcodeFormat.RSS_14,
-        ZXing.BarcodeFormat.RSS_EXPANDED
-      ]);
-
-      /*
-        TRY_HARDER: essential on mobile.
-        Makes the decoder work harder on angled,
-        partially blurred, or small barcodes.
-      */
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-      hints.set(ZXing.DecodeHintType.CHARACTER_SET, 'UTF-8');
-
-      return new ZXing.BrowserMultiFormatReader(hints);
-    }
-
-    /* ── Toggle ── */
-    window.toggleScanner = function () {
-      if (isScanning) { doStop(); } else { doStart(); }
-    };
-
-    /* ── Start ── */
-    function doStart() {
-      var btn = el('mainBtn');
-      btn.disabled = true;
-      setStatus('Starting camera\u2026');
-
-      reader = buildReader();
-
-      /*
-        decodeFromConstraints is the ONLY ZXing method that works
-        reliably on mobile Chrome and iOS Safari.
-
-        It lets ZXing own the full camera lifecycle — it calls
-        getUserMedia internally, attaches the stream to the video
-        element, and runs the decode loop.
-
-        Do NOT call getUserMedia manually and pass the stream in —
-        that path breaks on iOS and many Android devices.
-
-        Constraints: use min+ideal, never exact values.
-        Asking for an exact resolution causes OverconstrainedError
-        on a large number of Android models.
-      */
-      var constraints = {
-        video: {
-          facingMode : { ideal: 'environment' },
-          width      : { min: 320, ideal: 1280 },
-          height     : { min: 240, ideal: 720  }
-        }
-      };
-
-      reader.decodeFromConstraints(constraints, el('video'), function (result, err) {
-        /*
-          This callback fires on every video frame.
-          result is set when a code is found.
-          err is almost always NotFoundException (no code visible
-          in this frame) which is completely normal — ignore it.
-        */
-        if (result) {
-          var value  = result.getText();
-          var format = result.getBarcodeFormat();
-
-          if (value === lastValue) return;
-
-          lastValue = value;
-          clearTimeout(cooldownTmr);
-          cooldownTmr = setTimeout(function () { lastValue = null; }, COOLDOWN);
-
-          showResult(value, format);
-        }
-      })
-      .then(function () {
-        /* Camera is live — update UI */
-        isScanning = true;
-        btn.disabled  = false;
-        btn.className = 'btn btn-stop';
-        el('btnLabel').textContent = 'Stop Scanner';
-        setStatus('Scanning\u2026  aim at any barcode or QR code');
-        el('video').classList.add('live');
-        el('placeholder').classList.add('gone');
-        el('vf').classList.add('active');
-        el('scanline').classList.add('active');
-      })
-      .catch(function (err) {
-        isScanning   = false;
-        btn.disabled = false;
-        reader       = null;
-
-        var msg = 'Camera error.';
-        if (err) {
-          if      (err.name === 'NotAllowedError')       msg = 'Camera access denied. Allow the camera in your browser settings and try again.';
-          else if (err.name === 'NotFoundError')         msg = 'No camera found on this device.';
-          else if (err.name === 'NotReadableError')      msg = 'Camera is in use by another app. Close it and retry.';
-          else if (err.name === 'OverconstrainedError')  msg = 'Camera could not satisfy settings on this device.';
-          else if (err.name === 'SecurityError')         msg = 'Camera blocked. Make sure the page is served over HTTPS.';
-          else msg = 'Camera error: ' + (err.message || err.name || err);
-        }
-        setStatus(msg);
-      });
-    }
-
-    /* ── Stop ── */
-    function doStop() {
-      isScanning = false;
-
-      if (reader) {
-        /*
-          reset() stops all media tracks and kills ZXing's decode loop.
-          Because ZXing opened the stream, ZXing must close it.
-          Do not touch srcObject manually here.
-        */
-        reader.reset();
-        reader = null;
-      }
-
-      var vid = el('video');
-      vid.classList.remove('live');
-
-      el('placeholder').classList.remove('gone');
-      el('vf').classList.remove('active');
-      el('scanline').classList.remove('active');
-
-      var btn = el('mainBtn');
-      btn.disabled  = false;
-      btn.className = 'btn btn-start';
-      el('btnLabel').textContent = 'Start Scanner';
-      setStatus('Ready');
-
-      lastValue = null;
-      clearTimeout(cooldownTmr);
-    }
-
-    /* ── Show result card ── */
-    function showResult(value, format) {
-      var label = FORMAT_NAMES[format] !== undefined
-        ? FORMAT_NAMES[format]
-        : 'Format ' + format;
-
-      el('rHeadline').textContent = "Code Recognized: '" + value + "'";
-      el('rRaw').textContent      = value;
-      el('rMeta').textContent     = 'Format detected: ' + label;
-      el('overlay').classList.add('visible');
-    }
-
-    /* ── Close result card (X only) ── */
-    window.closeResult = function () {
-      el('overlay').classList.remove('visible');
-    };
-
-  }());
-  </script>
-
+  <script src="js/processor.js"></script>
+  <script src="js/decoder-1d.js"></script>
+  <script src="js/decoder-qr.js"></script>
+  <script src="js/decoder-pdf417.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
