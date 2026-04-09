@@ -1,29 +1,13 @@
 /*
   app.js
   ------
-  iOS WebKit (iPhone Chrome / Safari) compatible barcode scanner.
+  Uses decodeOnceFromConstraints — the ONLY single-scan ZXing method
+  that exists in this build and works reliably on iPhone Chrome/Safari.
 
-  Root cause of previous failures:
-    iOS WebKit requires the <video> element to be fully visible
-    and rendered with real pixel dimensions before drawImage(video)
-    on a canvas returns actual pixel data. If the video is hidden
-    in any way, drawImage returns a black frame and ZXing sees
-    nothing to decode.
-
-  Fix:
-    - <video> is never hidden — it always sits in the DOM with full
-      dimensions.
-    - The placeholder div covers the video with a solid background
-      and is removed (opacity 0) once the camera is live.
-    - drawImage therefore always captures real camera pixels.
-
-  iOS additional requirements honoured here:
-    - video.play() called inside a user-gesture promise chain
-    - video has autoplay muted playsinline attributes (set in HTML)
-    - getUserMedia constraints use ideal not exact to avoid
-      OverconstrainedError on iPhones
-    - Canvas dimensions set from videoWidth/videoHeight after
-      loadedmetadata fires, not before
+  decodeFromCanvas does NOT exist in this ZXing build.
+  decodeFromConstraints (continuous) has callback issues on iOS WebKit.
+  decodeOnceFromConstraints resolves with the first code found and is
+  the correct API for one-scan-at-a-time behaviour.
 */
 
 (function () {
@@ -44,14 +28,8 @@
   var rMeta       = document.getElementById('rMeta');
 
   /* ── State ── */
-  var reader    = null;
-  var camStream = null;
-  var rafHandle = null;
-  var scanning  = false;
-
-  /* ── Offscreen canvas for ZXing ── */
-  var offCanvas = document.createElement('canvas');
-  var offCtx    = offCanvas.getContext('2d');
+  var reader     = null;
+  var isScanning = false;
 
   /* ── Format labels ── */
   var FMT = {
@@ -74,9 +52,20 @@
     16: 'UPC/EAN Extension'
   };
 
-  /* ════════════════════════════════════
-     BUILD ZXING READER
-  ════════════════════════════════════ */
+  /* ══════════════════════════════════════
+     VERIFY ZXING LOADED
+  ══════════════════════════════════════ */
+  if (typeof ZXing === 'undefined') {
+    document.addEventListener('DOMContentLoaded', function () {
+      setStatus('ERROR: ZXing failed to load. Check js/zxing.min.js exists in repo.');
+      mainBtn.disabled = true;
+    });
+    return;
+  }
+
+  /* ══════════════════════════════════════
+     BUILD READER
+  ══════════════════════════════════════ */
   function buildReader() {
     var hints = new Map();
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
@@ -102,162 +91,117 @@
     return new ZXing.BrowserMultiFormatReader(hints);
   }
 
-  /* ════════════════════════════════════
+  /* ══════════════════════════════════════
      BUTTON
-  ════════════════════════════════════ */
+  ══════════════════════════════════════ */
   mainBtn.addEventListener('click', function () {
-    if (scanning) { doStop(false); } else { doStart(); }
+    if (isScanning) { doStop(false); } else { doStart(); }
   });
 
-  /* ════════════════════════════════════
-     X BUTTON  — close card + restart
-  ════════════════════════════════════ */
+  /* ══════════════════════════════════════
+     X BUTTON — close card + restart
+  ══════════════════════════════════════ */
   xBtn.addEventListener('click', function () {
     overlay.classList.remove('visible');
     doStart();
   });
 
-  /* ════════════════════════════════════
+  /* ══════════════════════════════════════
      START
-  ════════════════════════════════════ */
+  ══════════════════════════════════════ */
   function doStart() {
+    /* Clean up any leftover reader from a previous session */
+    if (reader) { reader.reset(); reader = null; }
+
+    isScanning       = false;
     mainBtn.disabled = true;
     setStatus('Starting camera\u2026');
 
     reader = buildReader();
 
     /*
-      Do NOT use exact width/height — iOS rejects them.
-      ideal lets WebKit pick the closest supported mode.
+      Show the camera feed once the first frame is actually rendered.
+      loadeddata fires after the first frame is available — safer than
+      loadedmetadata on iOS which fires before pixels are ready.
     */
-    navigator.mediaDevices.getUserMedia({
+    function onFirstFrame() {
+      videoEl.removeEventListener('loadeddata', onFirstFrame);
+      isScanning        = true;
+      mainBtn.disabled  = false;
+      mainBtn.className = 'btn btn-stop';
+      btnLabel.textContent = 'Stop Scanner';
+      placeholder.classList.add('gone');
+      vf.classList.add('active');
+      scanline.classList.add('active');
+      setStatus('Scanning\u2026  aim at any barcode or QR code');
+    }
+
+    videoEl.addEventListener('loadeddata', onFirstFrame);
+
+    /*
+      decodeOnceFromConstraints:
+        - This is the method that actually exists in this ZXing build.
+        - ZXing calls getUserMedia internally, attaches the stream to
+          the video element, calls play(), and runs the decode loop.
+        - It resolves with the first Result found, then stops.
+        - facingMode as a plain string (not object) is more reliable
+          for rear camera selection on iPhone.
+        - No exact width/height — ideal only, to avoid
+          OverconstrainedError on devices that reject exact values.
+    */
+    var constraints = {
       video: {
-        facingMode : { ideal: 'environment' },
+        facingMode : 'environment',
         width      : { min: 320, ideal: 1920 },
         height     : { min: 240, ideal: 1080 }
       }
-    })
+    };
 
-    .then(function (stream) {
-      camStream         = stream;
-      videoEl.srcObject = stream;
+    reader.decodeOnceFromConstraints(constraints, videoEl)
 
-      videoEl.addEventListener('loadedmetadata', function () {
-
-        /*
-          Set canvas to real video dimensions AFTER loadedmetadata.
-          On iOS, videoWidth/videoHeight are 0 before this event.
-        */
-        offCanvas.width  = videoEl.videoWidth;
-        offCanvas.height = videoEl.videoHeight;
-
-        /*
-          iOS requires play() to be called from within a user-gesture
-          chain. We are inside a .then() originating from a button
-          click, so this satisfies the requirement.
-        */
-        videoEl.play()
-
-          .then(function () {
-            scanning          = true;
-            mainBtn.disabled  = false;
-            mainBtn.className = 'btn btn-stop';
-            btnLabel.textContent = 'Stop Scanner';
-
-            /*
-              Show camera feed — just hide the placeholder.
-              The video itself has always been visible to WebKit.
-            */
-            placeholder.classList.add('gone');
-            vf.classList.add('active');
-            scanline.classList.add('active');
-            setStatus('Scanning\u2026  aim at any barcode or QR code');
-
-            rafHandle = requestAnimationFrame(decodeLoop);
-          })
-
-          .catch(handleError);
-
-      }, { once: true });
-    })
-
-    .catch(handleError);
-  }
-
-  /* ════════════════════════════════════
-     DECODE LOOP
-     ~60 fps on iPhone.
-     Each tick: copy video frame → canvas,
-     ask ZXing to decode the canvas pixels.
-  ════════════════════════════════════ */
-  function decodeLoop() {
-    if (!scanning) return;
-
-    /*
-      readyState 4 = HAVE_ENOUGH_DATA
-      Use the strictest ready-state on iOS to ensure
-      the frame is fully populated before we copy it.
-    */
-    if (videoEl.readyState < 4) {
-      rafHandle = requestAnimationFrame(decodeLoop);
-      return;
-    }
-
-    /*
-      Stamp current video frame onto the offscreen canvas.
-      Because the video element is always visible (not hidden),
-      iOS WebKit gives us real pixels here.
-    */
-    offCtx.drawImage(videoEl, 0, 0, offCanvas.width, offCanvas.height);
-
-    try {
-      var result = reader.decodeFromCanvas(offCanvas);
-
-      if (result) {
-        scanning = false;
-        cancelAnimationFrame(rafHandle);
-        rafHandle = null;
+      .then(function (result) {
+        /* Remove the frame listener in case it hasn't fired yet */
+        videoEl.removeEventListener('loadeddata', onFirstFrame);
 
         var value = result.getText();
-        var fmt   = FMT[result.getBarcodeFormat()] || 'Unknown';
+        var fmt   = result.getBarcodeFormat();
+        var label = FMT[fmt] !== undefined ? FMT[fmt] : 'Format ' + fmt;
 
-        doStop(true);
-        showResult(value, fmt);
-      }
+        /* Stop camera before showing result */
+        doStop(true /* silent */);
+        showResult(value, label);
+      })
 
-    } catch (e) {
-      /*
-        NotFoundException on every empty frame — totally normal.
-        ChecksumException / FormatException are also non-fatal.
-        Only log genuinely unexpected errors.
-      */
-      if (e && e.name !== 'NotFoundException'
-            && e.name !== 'ChecksumException'
-            && e.name !== 'FormatException') {
-        console.warn('ZXing:', e.name, e.message);
-      }
-      rafHandle = requestAnimationFrame(decodeLoop);
-    }
+      .catch(function (err) {
+        videoEl.removeEventListener('loadeddata', onFirstFrame);
+
+        /*
+          If isScanning is false the user pressed Stop Scanner,
+          which called reader.reset() — not a real error.
+        */
+        if (!isScanning) return;
+
+        isScanning = false;
+        handleError(err);
+      });
   }
 
-  /* ════════════════════════════════════
+  /* ══════════════════════════════════════
      STOP
-  ════════════════════════════════════ */
+     silent = true  → after successful scan, keep button neutral
+     silent = false → user pressed Stop, full reset
+  ══════════════════════════════════════ */
   function doStop(silent) {
-    scanning = false;
+    isScanning = false;
 
-    if (rafHandle !== null) {
-      cancelAnimationFrame(rafHandle);
-      rafHandle = null;
+    if (reader) {
+      /*
+        reset() stops all media tracks ZXing opened and kills the
+        decode loop. Always let ZXing close what it opened.
+      */
+      reader.reset();
+      reader = null;
     }
-
-    if (camStream) {
-      camStream.getTracks().forEach(function (t) { t.stop(); });
-      camStream = null;
-    }
-
-    videoEl.srcObject = null;
-    reader            = null;
 
     placeholder.classList.remove('gone');
     vf.classList.remove('active');
@@ -271,9 +215,9 @@
     }
   }
 
-  /* ════════════════════════════════════
+  /* ══════════════════════════════════════
      SHOW RESULT CARD
-  ════════════════════════════════════ */
+  ══════════════════════════════════════ */
   function showResult(value, label) {
     rHeadline.textContent = "Code Recognized: '" + value + "'";
     rRaw.textContent      = value;
@@ -286,29 +230,30 @@
     setStatus('Code found \u2014 press \u2715 to scan again');
   }
 
-  /* ════════════════════════════════════
+  /* ══════════════════════════════════════
      ERROR HANDLER
-  ════════════════════════════════════ */
+  ══════════════════════════════════════ */
   function handleError(err) {
-    scanning         = false;
+    isScanning       = false;
     mainBtn.disabled = false;
     reader           = null;
-    camStream        = null;
 
     var msg = 'Camera error.';
     if (err) {
-      if      (err.name === 'NotAllowedError')
-        msg = 'Camera access denied. Go to iPhone Settings \u2192 Chrome \u2192 Camera and allow access.';
+      if (err.name === 'NotAllowedError')
+        msg = 'Camera denied. On iPhone: Settings \u2192 Chrome \u2192 Camera \u2192 Allow.';
       else if (err.name === 'NotFoundError')
-        msg = 'No camera found.';
+        msg = 'No camera found on this device.';
       else if (err.name === 'NotReadableError')
-        msg = 'Camera in use by another app.';
+        msg = 'Camera in use by another app. Close it and retry.';
       else if (err.name === 'OverconstrainedError')
-        msg = 'Camera settings not supported on this device.';
+        msg = 'Camera settings not supported. Try again.';
       else if (err.name === 'SecurityError')
-        msg = 'Camera blocked. The page must be served over HTTPS.';
+        msg = 'Camera blocked. Page must be served over HTTPS.';
+      else if (err.name === 'NotFoundException')
+        msg = 'No code found. Try again with better lighting.';
       else
-        msg = 'Camera error: ' + (err.message || err.name);
+        msg = 'Error: ' + (err.message || err.name || String(err));
     }
     setStatus(msg);
   }
