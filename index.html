@@ -11,7 +11,7 @@
   <div class="app">
     <h1>&#128247; Code Scanner</h1>
 
-    <div class="viewport" id="viewport">
+    <div class="viewport">
 
       <div class="placeholder" id="placeholder">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -26,7 +26,6 @@
       </div>
 
       <video id="video" autoplay muted playsinline></video>
-      <canvas id="canvas" style="display:none;"></canvas>
 
       <div class="vf" id="vf">
         <div class="corner tl"></div>
@@ -35,6 +34,7 @@
         <div class="corner br"></div>
       </div>
       <div class="scanline" id="scanline"></div>
+
     </div>
 
     <button class="btn btn-start" id="mainBtn">
@@ -52,7 +52,7 @@
     <p class="status" id="statusMsg">Ready</p>
   </div>
 
-  <!-- Result card — X button only close -->
+  <!-- Result card — X button only -->
   <div class="overlay" id="overlay">
     <div class="card">
       <button class="x-btn" id="xBtn" title="Close">&#10005;</button>
@@ -68,11 +68,12 @@
     </div>
   </div>
 
-  <script src="js/processor.js"></script>
-  <script src="js/decoder-1d.js"></script>
-  <script src="js/decoder-qr.js"></script>
-  <script src="js/decoder-pdf417.js"></script>
-  <script src="js/camera.js"></script>
+  <!--
+    ZXing is a local file in your repo — no CDN, no external call.
+    It was downloaded once and committed alongside this HTML.
+  -->
+  <script src="js/zxing.min.js"></script>
   <script src="js/app.js"></script>
+
 </body>
 </html>
