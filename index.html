@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Scanner</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-wrapper {
+      width: 100%;
+      max-width: 480px;
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #f8fafc;
+    }
+
+    /* ── Camera viewer ── */
+    .scanner-container {
+      position: relative;
+      width: 100%;
+      background: #1e293b;
+      border-radius: 16px;
+      overflow: hidden;
+      aspect-ratio: 4 / 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    #video.active {
+      display: block;
+    }
+
+    .scanner-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: #475569;
+    }
+
+    .scanner-placeholder svg {
+      width: 64px;
+      height: 64px;
+    }
+
+    .scanner-placeholder p {
+      font-size: 0.875rem;
+      text-align: center;
+      padding: 0 16px;
+    }
+
+    /* ── Scan line animation ── */
+    .scan-line {
+      display: none;
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+      animation: scan 2s linear infinite;
+      box-shadow: 0 0 8px #22d3ee;
+      pointer-events: none;
+    }
+
+    .scan-line.active {
+      display: block;
+    }
+
+    @keyframes scan {
+      0%   { top: 10%; }
+      50%  { top: 85%; }
+      100% { top: 10%; }
+    }
+
+    /* ── Viewfinder corners ── */
+    .viewfinder {
+      display: none;
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .viewfinder.active {
+      display: block;
+    }
+
+    .corner {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border-color: #22d3ee;
+      border-style: solid;
+    }
+
+    .corner.tl { top: 12%;    left: 10%;  border-width: 3px 0 0 3px; }
+    .corner.tr { top: 12%;    right: 10%; border-width: 3px 3px 0 0; }
+    .corner.bl { bottom: 12%; left: 10%;  border-width: 0 0 3px 3px; }
+    .corner.br { bottom: 12%; right: 10%; border-width: 0 3px 3px 0; }
+
+    /* ── Camera toggle button ── */
+    .btn-scan {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #0ea5e9;
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      padding: 14px 32px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: 0 4px 14px rgba(14, 165, 233, 0.35);
+    }
+
+    .btn-scan:hover {
+      background: #0284c7;
+    }
+
+    .btn-scan:active {
+      transform: scale(0.97);
+    }
+
+    .btn-scan.scanning {
+      background: #dc2626;
+      box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+    }
+
+    .btn-scan.scanning:hover {
+      background: #b91c1c;
+    }
+
+    .btn-scan svg {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    /* ── Status text ── */
+    .status {
+      font-size: 0.8rem;
+      color: #64748b;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    /* ── Result popup overlay ── */
+    .result-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .result-overlay.visible {
+      display: flex;
+    }
+
+    .result-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 420px;
+      padding: 28px 24px 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      position: relative;
+      animation: popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.85); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    /* ── X close button (top-right of box) ── */
+    .result-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: #334155;
+      border: none;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      font-weight: 700;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+    }
+
+    .result-close:hover {
+      background: #dc2626;
+      color: #fff;
+    }
+
+    /* ── Green checkmark icon inside box ── */
+    .result-icon {
+      width: 44px;
+      height: 44px;
+      background: #dcfce7;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+
+    .result-icon svg {
+      width: 24px;
+      height: 24px;
+      color: #16a34a;
+    }
+
+    .result-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #22d3ee;
+      margin-bottom: 6px;
+    }
+
+    /* ── "Code Recognized: '...'" heading ── */
+    .result-heading {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 14px;
+      word-break: break-all;
+      padding-right: 20px;
+    }
+
+    /* ── Raw decoded value box ── */
+    .result-value {
+      background: #0f172a;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.875rem;
+      color: #e2e8f0;
+      word-break: break-all;
+      border: 1px solid #1e3a5f;
+      line-height: 1.5;
+    }
+
+    .result-format {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-wrapper">
+    <h1>&#128247; Code Scanner</h1>
+
+    <!-- Camera viewport -->
+    <div class="scanner-container" id="scannerBox">
+
+      <!-- Shown when camera is off -->
+      <div class="scanner-placeholder" id="placeholder">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0
+               011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0
+               01-2-2V9z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <p>Press the camera button below to start scanning</p>
+      </div>
+
+      <!-- Live camera feed -->
+      <video id="video" autoplay muted playsinline></video>
+
+      <!-- Animated viewfinder overlay -->
+      <div class="viewfinder" id="viewfinder">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+      <div class="scan-line" id="scanLine"></div>
+
+    </div>
+
+    <!-- Camera icon toggle button -->
+    <button class="btn-scan" id="btnScan" onclick="toggleScanner()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0
+             011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0
+             01-2-2V9z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <span id="btnText">Start Scanner</span>
+    </button>
+
+    <p class="status" id="status">Ready</p>
+  </div>
+
+  <!-- ────────────────────────────────────────
+       Result notification box
+  ──────────────────────────────────────── -->
+  <div class="result-overlay" id="resultOverlay">
+    <div class="result-box">
+
+      <!-- X close button — top-right of box -->
+      <button class="result-close" onclick="closeResult()" title="Close">&#10005;</button>
+
+      <!-- Green checkmark icon -->
+      <div class="result-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+        </svg>
+      </div>
+
+      <div class="result-label">Scan Result</div>
+
+      <!-- "Code Recognized: 'VALUE'" -->
+      <div class="result-heading" id="resultHeading"></div>
+
+      <!-- Raw decoded data in monospace box -->
+      <div class="result-value" id="resultValue"></div>
+      <div class="result-format" id="resultFormat"></div>
+
+    </div>
+  </div>
+
+  <!-- ZXing library (supports Code 128/39/93, QR, PDF417, MaxiCode, ITF, etc.) -->
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+
+  <script>
+    var codeReader   = null;
+    var scanning     = false;
+    var lastCode     = null;
+    var cooldownTimer = null;
+    var COOLDOWN_MS  = 3000; // ignore duplicate of same code for 3 s
+
+    /* ─── Build reader with all requested hint formats ─── */
+    function buildReader() {
+      var hints = new Map();
+
+      var formats = [
+        ZXing.BarcodeFormat.CODE_128,     // UPS, FedEx, USPS standard tracking
+        ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.CODE_93,
+        ZXing.BarcodeFormat.PDF_417,      // FedEx labels, boarding passes
+        ZXing.BarcodeFormat.QR_CODE,      // all QR variants
+        ZXing.BarcodeFormat.DATA_MATRIX,  // FedEx Express, USPS
+        ZXing.BarcodeFormat.AZTEC,
+        ZXing.BarcodeFormat.MAXICODE,     // UPS MaxiCode (2-D)
+        ZXing.BarcodeFormat.ITF,          // FedEx Ground ITF-14
+        ZXing.BarcodeFormat.CODABAR,
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A,
+        ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.RSS_14,
+        ZXing.BarcodeFormat.RSS_EXPANDED
+      ];
+
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+      return new ZXing.BrowserMultiFormatReader(hints);
+    }
+
+    /* ─── Human-readable format name from ZXing numeric enum ─── */
+    function formatLabel(fmt) {
+      var names = {
+        0:  'Aztec',
+        1:  'Codabar',
+        2:  'Code 39',
+        3:  'Code 93',
+        4:  'Code 128',
+        5:  'Data Matrix',
+        6:  'EAN-8',
+        7:  'EAN-13',
+        8:  'ITF (FedEx Ground)',
+        9:  'MaxiCode (UPS)',
+        10: 'PDF417 (FedEx / USPS)',
+        11: 'QR Code',
+        12: 'RSS 14',
+        13: 'RSS Expanded',
+        14: 'UPC-A',
+        15: 'UPC-E',
+        16: 'UPC/EAN Extension'
+      };
+      return names[fmt] !== undefined ? names[fmt] : 'Unknown Format (' + fmt + ')';
+    }
+
+    /* ─── Toggle scanner on/off ─── */
+    function toggleScanner() {
+      if (scanning) {
+        stopScanner();
+      } else {
+        startScanner();
+      }
+    }
+
+    /* ─── Start camera and decode loop ─── */
+    function startScanner() {
+      var video      = document.getElementById('video');
+      var btnScan    = document.getElementById('btnScan');
+      var btnText    = document.getElementById('btnText');
+      var placeholder = document.getElementById('placeholder');
+      var scanLine   = document.getElementById('scanLine');
+      var viewfinder = document.getElementById('viewfinder');
+      var status     = document.getElementById('status');
+
+      status.textContent = 'Requesting camera permission\u2026';
+
+      var constraints = {
+        video: {
+          facingMode: { ideal: 'environment' }, // rear camera on phones
+          width:  { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then(function (stream) {
+          codeReader = buildReader();
+
+          video.srcObject = stream;
+          video.classList.add('active');
+          placeholder.style.display = 'none';
+          scanLine.classList.add('active');
+          viewfinder.classList.add('active');
+
+          scanning = true;
+          btnScan.classList.add('scanning');
+          btnText.textContent = 'Stop Scanner';
+          status.textContent  = 'Scanning\u2026 aim at any barcode or QR code';
+
+          /* Continuous decode — result callback fires on every frame a code is found */
+          codeReader.decodeFromStream(stream, video, function (result, err) {
+            if (result) {
+              var text   = result.getText();
+              var format = result.getBarcodeFormat();
+
+              /* Skip if same code scanned within cooldown window */
+              if (text === lastCode) return;
+
+              lastCode = text;
+              clearTimeout(cooldownTimer);
+              cooldownTimer = setTimeout(function () { lastCode = null; }, COOLDOWN_MS);
+
+              showResult(text, format);
+            }
+            /* err is normally NotFoundException (no code in frame) — safe to ignore */
+          });
+        })
+        .catch(function (e) {
+          status.textContent = 'Camera error: ' + (e.message || 'Permission denied');
+          scanning = false;
+        });
+    }
+
+    /* ─── Stop camera and reset ─── */
+    function stopScanner() {
+      var video      = document.getElementById('video');
+      var btnScan    = document.getElementById('btnScan');
+      var btnText    = document.getElementById('btnText');
+      var placeholder = document.getElementById('placeholder');
+      var scanLine   = document.getElementById('scanLine');
+      var viewfinder = document.getElementById('viewfinder');
+      var status     = document.getElementById('status');
+
+      if (codeReader) {
+        codeReader.reset();
+        codeReader = null;
+      }
+
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(function (t) { t.stop(); });
+        video.srcObject = null;
+      }
+
+      video.classList.remove('active');
+      placeholder.style.display = '';
+      scanLine.classList.remove('active');
+      viewfinder.classList.remove('active');
+
+      scanning = false;
+      btnScan.classList.remove('scanning');
+      btnText.textContent = 'Start Scanner';
+      status.textContent  = 'Ready';
+      lastCode = null;
+      clearTimeout(cooldownTimer);
+    }
+
+    /* ─── Show the "Code Recognized" result box ─── */
+    function showResult(text, format) {
+      var overlay  = document.getElementById('resultOverlay');
+      var heading  = document.getElementById('resultHeading');
+      var valueEl  = document.getElementById('resultValue');
+      var formatEl = document.getElementById('resultFormat');
+
+      heading.textContent  = "Code Recognized: '" + text + "'";
+      valueEl.textContent  = text;
+      formatEl.textContent = 'Format detected: ' + formatLabel(format);
+
+      overlay.classList.add('visible');
+    }
+
+    /* ─── Close the result box (only via X button) ─── */
+    function closeResult() {
+      document.getElementById('resultOverlay').classList.remove('visible');
+    }
+  </script>
+
+</body>
+</html>
