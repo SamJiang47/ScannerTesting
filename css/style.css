@@ -51,35 +51,63 @@ h1 { font-size: 1.4rem; font-weight: 700; }
   justify-content: center;
 }
 
+/*
+  iOS WebKit fix:
+  The video element MUST be visible and have real pixel dimensions
+  at all times. If it is hidden via visibility:hidden or display:none,
+  drawImage(video) on a canvas returns a solid black frame and ZXing
+  can never decode anything.
+
+  Solution: keep the video always rendered. Cover it with the
+  placeholder div (which has a solid background and sits above it
+  in z-order) until the camera is actually live.
+*/
 #video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  visibility: hidden;
+  /* Always visible — never hide this element on iOS */
 }
 
-#video.live { visibility: visible; }
-
+/*
+  Placeholder sits on top of the video and covers it
+  with a solid background colour until scanning starts.
+*/
 .placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   color: var(--muted);
   text-align: center;
   padding: 0 24px;
   transition: opacity 0.25s;
-  z-index: 1;
 }
 
-.placeholder.gone { opacity: 0; pointer-events: none; }
-.placeholder svg  { width: 56px; height: 56px; }
-.placeholder p    { font-size: 0.85rem; line-height: 1.5; }
+/* Hide placeholder once camera is live */
+.placeholder.gone {
+  opacity: 0;
+  pointer-events: none;
+}
 
-/* viewfinder */
-.vf { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.placeholder svg { width: 56px; height: 56px; }
+.placeholder p   { font-size: 0.85rem; line-height: 1.5; }
+
+/* ── Viewfinder corners ── */
+.vf {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
 .vf.active { display: block; }
 
 .corner {
@@ -93,6 +121,7 @@ h1 { font-size: 1.4rem; font-weight: 700; }
 .corner.bl { bottom: 10%; left: 8%;   border-width: 0 0 3px 3px; }
 .corner.br { bottom: 10%; right: 8%;  border-width: 0 3px 3px 0; }
 
+/* ── Scan line ── */
 .scanline {
   display: none;
   position: absolute;
@@ -131,11 +160,19 @@ h1 { font-size: 1.4rem; font-weight: 700; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .btn svg      { width: 20px; height: 20px; flex-shrink: 0; }
 
-.btn-start { background: var(--blue); color: #fff; box-shadow: 0 4px 16px rgba(14,165,233,0.4); }
+.btn-start {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(14,165,233,0.4);
+}
 .btn-start:not(:disabled):hover { background: #0284c7; }
 
-.btn-stop  { background: var(--red);  color: #fff; box-shadow: 0 4px 16px rgba(220,38,38,0.4); }
-.btn-stop:not(:disabled):hover  { background: #b91c1c; }
+.btn-stop {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(220,38,38,0.4);
+}
+.btn-stop:not(:disabled):hover { background: #b91c1c; }
 
 /* ── Status ── */
 .status {
@@ -147,7 +184,7 @@ h1 { font-size: 1.4rem; font-weight: 700; }
   line-height: 1.5;
 }
 
-/* ── Overlay ── */
+/* ── Result overlay ── */
 .overlay {
   display: none;
   position: fixed;
