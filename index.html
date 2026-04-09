@@ -4,46 +4,35 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Code Scanner</title>
-  <!--
-    ZERO external dependencies.
-    This app uses only:
-      - navigator.mediaDevices.getUserMedia  (camera)
-      - BarcodeDetector                      (native browser barcode API)
-      - requestAnimationFrame                (decode loop)
-    All three are built into the browser. Nothing is downloaded.
-  -->
   <style>
-    :root {
-      --bg:          #0f172a;
-      --surface:     #1e293b;
-      --border:      #334155;
-      --text:        #f1f5f9;
-      --muted:       #64748b;
-      --accent:      #22d3ee;
-      --btn-blue:    #0ea5e9;
-      --btn-red:     #dc2626;
-      --success-ring:#dcfce7;
-      --success-icon:#16a34a;
-    }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f172a;
+      --surface:  #1e293b;
+      --border:   #334155;
+      --text:     #f1f5f9;
+      --muted:    #64748b;
+      --accent:   #22d3ee;
+      --blue:     #0ea5e9;
+      --red:      #dc2626;
+    }
 
     html, body {
       height: 100%;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
 
     body {
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
     }
 
-    /* ── page wrapper ── */
     .app {
       width: 100%;
       max-width: 480px;
@@ -54,15 +43,9 @@
       gap: 20px;
     }
 
-    .app-title {
-      font-size: 1.4rem;
-      font-weight: 700;
-      letter-spacing: 0.01em;
-    }
+    h1 { font-size: 1.4rem; font-weight: 700; }
 
-    /* ──────────────────────────────
-       CAMERA VIEWPORT
-    ────────────────────────────── */
+    /* ── Viewport ── */
     .viewport {
       position: relative;
       width: 100%;
@@ -76,10 +59,11 @@
     }
 
     /*
-      KEY MOBILE FIX:
-      Never use display:none on the video element — iOS Safari refuses
-      to decode frames when the element is removed from layout.
-      Use visibility:hidden so the element keeps its dimensions.
+      CRITICAL MOBILE FIX:
+      Never use display:none on the video element.
+      iOS Safari and many Android Chromes will refuse to decode
+      frames from a video that has no layout dimensions.
+      visibility:hidden keeps the element sized in the DOM.
     */
     #video {
       position: absolute;
@@ -90,11 +74,8 @@
       visibility: hidden;
     }
 
-    #video.live {
-      visibility: visible;
-    }
+    #video.live { visibility: visible; }
 
-    /* placeholder shown when camera is off */
     .placeholder {
       display: flex;
       flex-direction: column;
@@ -105,46 +86,33 @@
       padding: 0 24px;
       transition: opacity 0.25s;
       z-index: 1;
-    }
-
-    .placeholder.gone {
-      opacity: 0;
       pointer-events: none;
     }
 
-    .placeholder svg { width: 56px; height: 56px; }
-    .placeholder p   { font-size: 0.85rem; line-height: 1.5; }
+    .placeholder.gone { opacity: 0; }
+    .placeholder svg  { width: 56px; height: 56px; }
+    .placeholder p    { font-size: 0.85rem; line-height: 1.5; }
 
     /* viewfinder corners */
-    .vf {
-      display: none;
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 2;
-    }
-
+    .vf { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
     .vf.active { display: block; }
 
     .corner {
       position: absolute;
-      width: 26px;
-      height: 26px;
+      width: 26px; height: 26px;
       border-style: solid;
       border-color: var(--accent);
     }
-
     .corner.tl { top: 10%;    left: 8%;   border-width: 3px 0 0 3px; }
     .corner.tr { top: 10%;    right: 8%;  border-width: 3px 3px 0 0; }
     .corner.bl { bottom: 10%; left: 8%;   border-width: 0 0 3px 3px; }
     .corner.br { bottom: 10%; right: 8%;  border-width: 0 3px 3px 0; }
 
-    /* animated scan line */
+    /* scan line */
     .scanline {
       display: none;
       position: absolute;
-      left: 8%;
-      right: 8%;
+      left: 8%; right: 8%;
       height: 2px;
       background: linear-gradient(90deg, transparent, var(--accent), transparent);
       box-shadow: 0 0 7px var(--accent);
@@ -152,7 +120,6 @@
       pointer-events: none;
       z-index: 3;
     }
-
     .scanline.active { display: block; }
 
     @keyframes sweep {
@@ -161,28 +128,7 @@
       100% { top: 10%; }
     }
 
-    /* ──────────────────────────────
-       UNSUPPORTED BROWSER BANNER
-    ────────────────────────────── */
-    .unsupported-banner {
-      display: none;
-      width: 100%;
-      background: #431407;
-      border: 1px solid #7c2d12;
-      border-radius: 12px;
-      padding: 14px 16px;
-      font-size: 0.82rem;
-      line-height: 1.6;
-      color: #fed7aa;
-      text-align: center;
-    }
-
-    .unsupported-banner.show { display: block; }
-    .unsupported-banner strong { color: #fdba74; }
-
-    /* ──────────────────────────────
-       CAMERA BUTTON
-    ────────────────────────────── */
+    /* ── Button ── */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -193,68 +139,52 @@
       font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.18s, transform 0.1s, opacity 0.2s, box-shadow 0.18s;
+      transition: background 0.18s, transform 0.1s, opacity 0.2s;
       -webkit-tap-highlight-color: transparent;
       user-select: none;
     }
-
-    .btn:active  { transform: scale(0.96); }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-    .btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .btn:active   { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn svg      { width: 20px; height: 20px; flex-shrink: 0; }
 
     .btn-start {
-      background: var(--btn-blue);
+      background: var(--blue);
       color: #fff;
       box-shadow: 0 4px 16px rgba(14,165,233,0.4);
     }
-
-    .btn-start:not(:disabled):hover {
-      background: #0284c7;
-      box-shadow: 0 4px 20px rgba(14,165,233,0.5);
-    }
+    .btn-start:not(:disabled):hover { background: #0284c7; }
 
     .btn-stop {
-      background: var(--btn-red);
+      background: var(--red);
       color: #fff;
       box-shadow: 0 4px 16px rgba(220,38,38,0.4);
     }
+    .btn-stop:not(:disabled):hover { background: #b91c1c; }
 
-    .btn-stop:not(:disabled):hover {
-      background: #b91c1c;
-      box-shadow: 0 4px 20px rgba(220,38,38,0.5);
-    }
-
-    /* ──────────────────────────────
-       STATUS LINE
-    ────────────────────────────── */
+    /* ── Status ── */
     .status {
       font-size: 0.78rem;
       color: var(--muted);
       text-align: center;
       min-height: 16px;
       padding: 0 12px;
-      line-height: 1.4;
+      line-height: 1.5;
     }
 
-    /* ──────────────────────────────
-       RESULT OVERLAY
-       Only closeable by the X button.
-    ────────────────────────────── */
-    .result-overlay {
+    /* ── Result overlay ── */
+    .overlay {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.6);
+      background: rgba(0,0,0,0.6);
       z-index: 999;
       align-items: center;
       justify-content: center;
       padding: 20px;
-      /* intentionally NO click-on-backdrop close */
     }
+    .overlay.visible { display: flex; }
 
-    .result-overlay.visible { display: flex; }
-
-    .result-card {
+    .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 16px;
@@ -262,22 +192,20 @@
       max-width: 400px;
       padding: 28px 20px 22px;
       position: relative;
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
-      animation: cardPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+      animation: pop 0.22s cubic-bezier(0.34,1.56,0.64,1);
     }
 
-    @keyframes cardPop {
-      from { opacity: 0; transform: scale(0.8) translateY(12px); }
+    @keyframes pop {
+      from { opacity: 0; transform: scale(0.8) translateY(10px); }
       to   { opacity: 1; transform: scale(1) translateY(0); }
     }
 
-    /* X button — top right corner of card */
+    /* X close button */
     .x-btn {
       position: absolute;
-      top: 11px;
-      right: 11px;
-      width: 28px;
-      height: 28px;
+      top: 11px; right: 11px;
+      width: 28px; height: 28px;
       border: none;
       border-radius: 50%;
       background: var(--border);
@@ -292,28 +220,17 @@
       -webkit-tap-highlight-color: transparent;
       line-height: 1;
     }
+    .x-btn:hover { background: var(--red); color: #fff; }
 
-    .x-btn:hover { background: var(--btn-red); color: #fff; }
-
-    /* green check circle */
     .check-wrap {
-      width: 40px;
-      height: 40px;
+      width: 40px; height: 40px;
       border-radius: 50%;
-      background: var(--success-ring);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: #dcfce7;
+      display: flex; align-items: center; justify-content: center;
       margin-bottom: 12px;
     }
+    .check-wrap svg { width: 22px; height: 22px; stroke: #16a34a; }
 
-    .check-wrap svg {
-      width: 22px;
-      height: 22px;
-      stroke: var(--success-icon);
-    }
-
-    /* "Code Recognized: '...'" line */
     .r-eyebrow {
       font-size: 0.65rem;
       font-weight: 700;
@@ -323,6 +240,7 @@
       margin-bottom: 5px;
     }
 
+    /* "Code Recognized: '...'" */
     .r-headline {
       font-size: 0.95rem;
       font-weight: 700;
@@ -333,36 +251,27 @@
       line-height: 1.4;
     }
 
-    /* raw decoded value in monospace box */
     .r-raw {
       background: var(--bg);
       border: 1px solid #1d3a5c;
       border-radius: 10px;
       padding: 10px 13px;
-      font-family: 'Courier New', Courier, monospace;
+      font-family: 'Courier New', monospace;
       font-size: 0.82rem;
       color: #e2e8f0;
       word-break: break-all;
       line-height: 1.6;
     }
 
-    .r-meta {
-      margin-top: 9px;
-      font-size: 0.72rem;
-      color: var(--muted);
-    }
+    .r-meta { margin-top: 9px; font-size: 0.72rem; color: var(--muted); }
   </style>
 </head>
 <body>
 
   <div class="app">
+    <h1>&#128247; Code Scanner</h1>
 
-    <h1 class="app-title">&#128247; Code Scanner</h1>
-
-    <!-- ── Camera viewport ── -->
     <div class="viewport">
-
-      <!-- shown while camera is off -->
       <div class="placeholder" id="placeholder">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -375,34 +284,17 @@
         <p>Tap the camera button to begin scanning</p>
       </div>
 
-      <!--
-        video stays in DOM and keeps its dimensions at all times.
-        We toggle visibility, not display, so the browser can always
-        sample frames from it for decoding.
-      -->
       <video id="video" autoplay muted playsinline></video>
 
-      <!-- viewfinder overlay -->
       <div class="vf" id="vf">
         <div class="corner tl"></div>
         <div class="corner tr"></div>
         <div class="corner bl"></div>
         <div class="corner br"></div>
       </div>
-
-      <!-- animated scan line -->
       <div class="scanline" id="scanline"></div>
-
     </div>
 
-    <!-- shown only on unsupported browsers (Firefox, old iOS Safari) -->
-    <div class="unsupported-banner" id="unsupBanner">
-      &#9888;&#65039; Your browser does not support the native Barcode Detection API.<br>
-      Please open this page in <strong>Google Chrome</strong> (Android or desktop)
-      or <strong>Safari on iOS 17+</strong>.
-    </div>
-
-    <!-- camera icon toggle button -->
     <button class="btn btn-start" id="mainBtn" onclick="toggleScanner()">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -412,359 +304,239 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
-      <span id="mainBtnLabel">Start Scanner</span>
+      <span id="btnLabel">Start Scanner</span>
     </button>
 
     <p class="status" id="statusMsg">Ready</p>
+  </div>
 
-  </div><!-- /.app -->
 
+  <!-- Result card — only the X button closes it -->
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <button class="x-btn" onclick="closeResult()" title="Close">&#10005;</button>
 
-  <!-- ── Result notification box ──
-       Can ONLY be closed by the X button.
-       No backdrop click to close — intentional.
-  ── -->
-  <div class="result-overlay" id="resultOverlay">
-    <div class="result-card">
-
-      <!-- X close button, top-right of card -->
-      <button class="x-btn" id="xBtn" onclick="closeResult()" title="Close">&#10005;</button>
-
-      <!-- green check icon -->
       <div class="check-wrap">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
         </svg>
       </div>
 
       <div class="r-eyebrow">Scan Result</div>
-
-      <!-- "Code Recognized: 'VALUE'" -->
       <div class="r-headline" id="rHeadline"></div>
-
-      <!-- raw decoded value -->
-      <div class="r-raw" id="rRaw"></div>
-
-      <!-- format info -->
-      <div class="r-meta" id="rMeta"></div>
-
+      <div class="r-raw"      id="rRaw"></div>
+      <div class="r-meta"     id="rMeta"></div>
     </div>
   </div>
 
 
+  <!--
+    ZXing — free, open-source (Apache 2.0).
+    No account. No API key. No cost.
+    This one JS file is the entire decoder.
+  -->
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+
   <script>
-  /* ================================================================
-     CODE SCANNER — no external libraries or CDN dependencies.
-
-     Primary API: window.BarcodeDetector
-       Built into: Chrome 83+, Edge 83+, Samsung Internet 13+,
-                   Opera 70+, Safari 17.0+ (iOS 17+).
-       Not in:     Firefox (as of 2026).
-
-     Supported formats (all requested ones covered):
-       code_128  → UPS, FedEx, USPS standard tracking labels
-       code_39   → industrial / warehousing
-       code_93   → extended alphanumeric
-       itf       → FedEx Ground ITF-14
-       pdf417    → FedEx Express, USPS, boarding passes
-       qr_code   → all QR variants (URL, vCard, WiFi, etc.)
-       data_matrix → FedEx Express envelopes
-       aztec     → transit tickets
-       ean_13/8, upc_a/e, codabar → retail
-  ================================================================ */
-
   (function () {
     'use strict';
 
-    /* ── state ── */
-    var detector    = null;   // BarcodeDetector instance
-    var mediaStream = null;   // active MediaStream
-    var rafHandle   = null;   // requestAnimationFrame id
+    var reader      = null;
     var isScanning  = false;
-    var lastValue   = null;   // cooldown: value of last scan
+    var lastValue   = null;
     var cooldownTmr = null;
-    var COOLDOWN    = 2500;   // ms before same code can fire again
+    var COOLDOWN    = 2500;
 
-    /* ── human-readable format names ── */
-    var FMT = {
-      'aztec'       : 'Aztec',
-      'code_128'    : 'Code 128',
-      'code_39'     : 'Code 39',
-      'code_93'     : 'Code 93',
-      'codabar'     : 'Codabar',
-      'data_matrix' : 'Data Matrix',
-      'ean_8'       : 'EAN-8',
-      'ean_13'      : 'EAN-13',
-      'itf'         : 'ITF  (FedEx Ground)',
-      'pdf417'      : 'PDF417  (FedEx / USPS)',
-      'qr_code'     : 'QR Code',
-      'upc_a'       : 'UPC-A',
-      'upc_e'       : 'UPC-E',
-      'unknown'     : 'Unknown'
+    var FORMAT_NAMES = {
+      0:  'Aztec',
+      1:  'Codabar',
+      2:  'Code 39',
+      3:  'Code 93',
+      4:  'Code 128',
+      5:  'Data Matrix',
+      6:  'EAN-8',
+      7:  'EAN-13',
+      8:  'ITF  (FedEx Ground)',
+      9:  'MaxiCode  (UPS)',
+      10: 'PDF417  (FedEx / USPS)',
+      11: 'QR Code',
+      12: 'RSS 14',
+      13: 'RSS Expanded',
+      14: 'UPC-A',
+      15: 'UPC-E',
+      16: 'UPC/EAN Extension'
     };
 
-    /* ── shorthand element accessors ── */
     function el(id) { return document.getElementById(id); }
+    function setStatus(msg) { el('statusMsg').textContent = msg; }
 
-    /* ════════════════════════════════════════
-       PAGE LOAD — check BarcodeDetector support
-    ════════════════════════════════════════ */
-    window.addEventListener('DOMContentLoaded', function () {
-      if (typeof BarcodeDetector === 'undefined') {
-        el('unsupBanner').classList.add('show');
-        el('mainBtn').disabled = true;
-        el('statusMsg').textContent =
-          'BarcodeDetector not available — see the message above.';
-      }
-    });
+    /* ── Build ZXing reader with all required format hints ── */
+    function buildReader() {
+      var hints = new Map();
 
-    /* ════════════════════════════════════════
-       PUBLIC: toggle (called by button onclick)
-    ════════════════════════════════════════ */
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.CODE_39,
+        ZXing.BarcodeFormat.CODE_93,
+        ZXing.BarcodeFormat.PDF_417,
+        ZXing.BarcodeFormat.QR_CODE,
+        ZXing.BarcodeFormat.DATA_MATRIX,
+        ZXing.BarcodeFormat.AZTEC,
+        ZXing.BarcodeFormat.MAXICODE,
+        ZXing.BarcodeFormat.ITF,
+        ZXing.BarcodeFormat.CODABAR,
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.UPC_A,
+        ZXing.BarcodeFormat.UPC_E,
+        ZXing.BarcodeFormat.RSS_14,
+        ZXing.BarcodeFormat.RSS_EXPANDED
+      ]);
+
+      /*
+        TRY_HARDER: essential on mobile.
+        Makes the decoder work harder on angled,
+        partially blurred, or small barcodes.
+      */
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      hints.set(ZXing.DecodeHintType.CHARACTER_SET, 'UTF-8');
+
+      return new ZXing.BrowserMultiFormatReader(hints);
+    }
+
+    /* ── Toggle ── */
     window.toggleScanner = function () {
-      if (isScanning) { stopScanner(); }
-      else            { startScanner(); }
+      if (isScanning) { doStop(); } else { doStart(); }
     };
 
-    /* ════════════════════════════════════════
-       START SCANNER
-    ════════════════════════════════════════ */
-    function startScanner() {
-      if (typeof BarcodeDetector === 'undefined') return;
-
+    /* ── Start ── */
+    function doStart() {
       var btn = el('mainBtn');
       btn.disabled = true;
       setStatus('Starting camera\u2026');
 
+      reader = buildReader();
+
       /*
-        Step 1 — Ask the browser which formats it supports natively.
-                  This avoids passing formats the browser will reject.
-        Step 2 — Open the rear camera.
-        Step 3 — Attach stream to video element and start decode loop.
+        decodeFromConstraints is the ONLY ZXing method that works
+        reliably on mobile Chrome and iOS Safari.
+
+        It lets ZXing own the full camera lifecycle — it calls
+        getUserMedia internally, attaches the stream to the video
+        element, and runs the decode loop.
+
+        Do NOT call getUserMedia manually and pass the stream in —
+        that path breaks on iOS and many Android devices.
+
+        Constraints: use min+ideal, never exact values.
+        Asking for an exact resolution causes OverconstrainedError
+        on a large number of Android models.
       */
-      BarcodeDetector.getSupportedFormats()
-        .then(function (supported) {
-
-          /* Filter our desired formats down to what this browser has */
-          var desired = [
-            'code_128', 'code_39', 'code_93', 'codabar',
-            'itf', 'pdf417', 'data_matrix', 'qr_code',
-            'aztec', 'ean_8', 'ean_13', 'upc_a', 'upc_e', 'unknown'
-          ];
-          var formats = desired.filter(function (f) {
-            return supported.indexOf(f) !== -1;
-          });
-          /* Safety net: if nothing matched, use whatever is available */
-          if (formats.length === 0) formats = supported;
-
-          detector = new BarcodeDetector({ formats: formats });
-
-          /*
-            Camera constraints:
-              facingMode: environment  → rear camera on phones
-              min/ideal not exact      → lets the browser negotiate;
-                                         hard exact values cause
-                                         OverconstrainedError on many
-                                         Android models and all iOS.
-          */
-          return navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode : { ideal: 'environment' },
-              width      : { min: 320, ideal: 1280 },
-              height     : { min: 240, ideal: 720  }
-            }
-          });
-        })
-
-        .then(function (stream) {
-          mediaStream = stream;
-          var vid = el('video');
-          vid.srcObject = stream;
-
-          /* Wait for the video to be ready before starting decode */
-          return new Promise(function (resolve) {
-            vid.addEventListener('loadedmetadata', resolve, { once: true });
-          });
-        })
-
-        .then(function () {
-          var vid = el('video');
-          vid.play();
-
-          /* Show live feed, hide placeholder, show viewfinder */
-          vid.classList.add('live');
-          el('placeholder').classList.add('gone');
-          el('vf').classList.add('active');
-          el('scanline').classList.add('active');
-
-          /* Switch button to Stop mode */
-          isScanning = true;
-          btn.disabled = false;
-          btn.className = 'btn btn-stop';
-          el('mainBtnLabel').textContent = 'Stop Scanner';
-          setStatus('Scanning\u2026  aim at any barcode or QR code');
-
-          startDecodeLoop();
-        })
-
-        .catch(function (err) {
-          isScanning = false;
-          btn.disabled = false;
-
-          /*
-            Name each common camera error so the user knows
-            exactly what to do to fix it.
-          */
-          var msg;
-          if (!err) {
-            msg = 'Unknown camera error.';
-          } else if (err.name === 'NotAllowedError') {
-            msg = 'Camera access denied. Tap the lock icon in your address bar and allow the camera, then try again.';
-          } else if (err.name === 'NotFoundError') {
-            msg = 'No camera detected on this device.';
-          } else if (err.name === 'NotReadableError') {
-            msg = 'Camera is already in use by another app. Close it and try again.';
-          } else if (err.name === 'OverconstrainedError') {
-            msg = 'Camera could not satisfy the required settings on this device.';
-          } else if (err.name === 'SecurityError') {
-            msg = 'Camera blocked by browser security policy. Ensure the page is served over HTTPS.';
-          } else {
-            msg = 'Camera error: ' + (err.message || err.name);
-          }
-          setStatus(msg);
-        });
-    }
-
-    /* ════════════════════════════════════════
-       DECODE LOOP
-       Uses requestAnimationFrame so it stays
-       in sync with the display refresh rate
-       and never stacks async calls.
-    ════════════════════════════════════════ */
-    function startDecodeLoop() {
-      function loop() {
-        if (!isScanning) return;
-
-        var vid = el('video');
-
-        /*
-          Skip this frame if the video isn't ready yet.
-          readyState 2 = HAVE_CURRENT_DATA (enough to decode a frame).
-        */
-        if (!vid || vid.readyState < 2) {
-          rafHandle = requestAnimationFrame(loop);
-          return;
+      var constraints = {
+        video: {
+          facingMode : { ideal: 'environment' },
+          width      : { min: 320, ideal: 1280 },
+          height     : { min: 240, ideal: 720  }
         }
+      };
 
+      reader.decodeFromConstraints(constraints, el('video'), function (result, err) {
         /*
-          Pass the video element directly to BarcodeDetector.detect().
-          The browser's native implementation will sample the current
-          frame. This is the most reliable path on mobile.
+          This callback fires on every video frame.
+          result is set when a code is found.
+          err is almost always NotFoundException (no code visible
+          in this frame) which is completely normal — ignore it.
         */
-        detector.detect(vid)
-          .then(function (results) {
-            if (results.length > 0) {
-              handleResult(results[0]);
-            }
-          })
-          .catch(function (/* detectErr */) {
-            /* Decode errors are normal (blurry frame etc.) — ignore. */
-          })
-          .finally(function () {
-            if (isScanning) {
-              rafHandle = requestAnimationFrame(loop);
-            }
-          });
-      }
+        if (result) {
+          var value  = result.getText();
+          var format = result.getBarcodeFormat();
 
-      rafHandle = requestAnimationFrame(loop);
+          if (value === lastValue) return;
+
+          lastValue = value;
+          clearTimeout(cooldownTmr);
+          cooldownTmr = setTimeout(function () { lastValue = null; }, COOLDOWN);
+
+          showResult(value, format);
+        }
+      })
+      .then(function () {
+        /* Camera is live — update UI */
+        isScanning = true;
+        btn.disabled  = false;
+        btn.className = 'btn btn-stop';
+        el('btnLabel').textContent = 'Stop Scanner';
+        setStatus('Scanning\u2026  aim at any barcode or QR code');
+        el('video').classList.add('live');
+        el('placeholder').classList.add('gone');
+        el('vf').classList.add('active');
+        el('scanline').classList.add('active');
+      })
+      .catch(function (err) {
+        isScanning   = false;
+        btn.disabled = false;
+        reader       = null;
+
+        var msg = 'Camera error.';
+        if (err) {
+          if      (err.name === 'NotAllowedError')       msg = 'Camera access denied. Allow the camera in your browser settings and try again.';
+          else if (err.name === 'NotFoundError')         msg = 'No camera found on this device.';
+          else if (err.name === 'NotReadableError')      msg = 'Camera is in use by another app. Close it and retry.';
+          else if (err.name === 'OverconstrainedError')  msg = 'Camera could not satisfy settings on this device.';
+          else if (err.name === 'SecurityError')         msg = 'Camera blocked. Make sure the page is served over HTTPS.';
+          else msg = 'Camera error: ' + (err.message || err.name || err);
+        }
+        setStatus(msg);
+      });
     }
 
-    /* ════════════════════════════════════════
-       HANDLE A DETECTED RESULT
-    ════════════════════════════════════════ */
-    function handleResult(barcode) {
-      var value  = barcode.rawValue;
-      var format = barcode.format;
-
-      /* Ignore repeated detections of the same code within cooldown */
-      if (value === lastValue) return;
-
-      lastValue = value;
-      clearTimeout(cooldownTmr);
-      cooldownTmr = setTimeout(function () { lastValue = null; }, COOLDOWN);
-
-      showResult(value, format);
-    }
-
-    /* ════════════════════════════════════════
-       STOP SCANNER
-    ════════════════════════════════════════ */
-    function stopScanner() {
+    /* ── Stop ── */
+    function doStop() {
       isScanning = false;
 
-      /* Cancel the decode loop */
-      if (rafHandle !== null) {
-        cancelAnimationFrame(rafHandle);
-        rafHandle = null;
+      if (reader) {
+        /*
+          reset() stops all media tracks and kills ZXing's decode loop.
+          Because ZXing opened the stream, ZXing must close it.
+          Do not touch srcObject manually here.
+        */
+        reader.reset();
+        reader = null;
       }
 
-      /* Release the camera */
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(function (t) { t.stop(); });
-        mediaStream = null;
-      }
-
-      detector = null;
-
-      /* Reset video element */
       var vid = el('video');
-      if (vid.srcObject) {
-        vid.srcObject = null;
-      }
       vid.classList.remove('live');
 
-      /* Reset UI */
       el('placeholder').classList.remove('gone');
       el('vf').classList.remove('active');
       el('scanline').classList.remove('active');
 
       var btn = el('mainBtn');
-      btn.disabled = false;
+      btn.disabled  = false;
       btn.className = 'btn btn-start';
-      el('mainBtnLabel').textContent = 'Start Scanner';
+      el('btnLabel').textContent = 'Start Scanner';
       setStatus('Ready');
 
       lastValue = null;
       clearTimeout(cooldownTmr);
     }
 
-    /* ════════════════════════════════════════
-       SHOW RESULT CARD
-    ════════════════════════════════════════ */
+    /* ── Show result card ── */
     function showResult(value, format) {
-      var label = FMT[format] || (format ? String(format) : 'Unknown');
+      var label = FORMAT_NAMES[format] !== undefined
+        ? FORMAT_NAMES[format]
+        : 'Format ' + format;
 
       el('rHeadline').textContent = "Code Recognized: '" + value + "'";
       el('rRaw').textContent      = value;
       el('rMeta').textContent     = 'Format detected: ' + label;
-
-      el('resultOverlay').classList.add('visible');
+      el('overlay').classList.add('visible');
     }
 
-    /* ════════════════════════════════════════
-       CLOSE RESULT CARD (X button only)
-    ════════════════════════════════════════ */
+    /* ── Close result card (X only) ── */
     window.closeResult = function () {
-      el('resultOverlay').classList.remove('visible');
+      el('overlay').classList.remove('visible');
     };
-
-    /* ════════════════════════════════════════
-       HELPERS
-    ════════════════════════════════════════ */
-    function setStatus(msg) {
-      el('statusMsg').textContent = msg;
-    }
 
   }());
   </script>
